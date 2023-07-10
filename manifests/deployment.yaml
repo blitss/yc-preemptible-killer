@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yc-preemptible-killer
+spec:
+  replicas: 1
+  template:
+    spec:
+      serviceAccountName: yc-preemptible-killer
+      terminationGracePeriodSeconds: 300
+      containers:
+      - name: yc-preemptible-killer
+        image: europe-west4-docker.pkg.dev/youthink/docker/yc-preemptible-killer:latest
+        ports:
+        - name: prom-metrics
+          containerPort: 9001
+        env:
+        - name: DRAIN_TIMEOUT
+          value: "300"
+        - name: INTERVAL
+          value: "600"
+        - name: YANDEX_APPLICATION_CREDENTIALS
+          value: /etc/preemptible-killer-secrets/google-service-account.json
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: prom-metrics
+          initialDelaySeconds: 30
+          timeoutSeconds: 1

@@ -1,0 +1,16 @@
+{{- if .Values.rbac.enable -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "yc-preemptible-killer.fullname" . }}
+  labels:
+{{ include "yc-preemptible-killer.labels" . | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "yc-preemptible-killer.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "yc-preemptible-killer.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end -}}
