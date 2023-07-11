@@ -1,4 +1,6 @@
-# yc-preemptible-killer
+# Yandex Cloud preemptible instances killer
+
+This is heavily borrowed from the [estafette-gke-preemptible-killer](https://github.com/estafette/estafette-gke-preemptible-killer).
 
 This small Kubernetes application loop through a given preemptibles node pool and kill a node before the regular [24h
 life time of a preemptible VM](https://cloud.yandex.com/en/docs/compute/concepts/preemptible-vm).

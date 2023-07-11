@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -19,12 +20,14 @@ import (
 	k8sruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // YCK = Yandex Cloud Kubernetes
 const (
 	// annotationYCKPreemptibleKillerState is the key of the annotation to use to store the expiry datetime
-	annotationYCKPreemptibleKillerState string = "youthink.dev/yck-preemptible-killer-state"
+	annotationYCKPreemptibleKillerState string = "youthink.dev/yck-preemptible-killer-state";
+	yandexPrefix string = "yandex://"
 )
 
 // YCKPreemptibleKillerState represents the state of yck-preemptible-killer
@@ -91,6 +94,23 @@ func init() {
 	prometheus.MustRegister(nodeTotals)
 }
 
+
+func buildConfig(kubeconfig string) (*rest.Config, error) {
+	if kubeconfig != "" {
+		cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	}
+
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 func main() {
 
 	// parse command line parameters
@@ -103,13 +123,13 @@ func main() {
 	ctx := foundation.InitCancellationContext(context.Background())
 
 	// init /liveness endpoint
-	foundation.InitLiveness()
+	// foundation.InitLiveness()
 
 	// configure prometheus metrics endpoint
 	foundation.InitMetrics()
 
 	// create kubernetes api client
-	kubeClientConfig, err := rest.InClusterConfig()
+	kubeClientConfig, err := buildConfig(*kubeConfigPath)
 	if err != nil {
 		log.Fatal().Err(err)
 	}
@@ -238,6 +258,7 @@ func getDesiredNodeState(now time.Time, ctx context.Context, kubernetesClient Ku
 
 	log.Info().
 		Str("host", node.ObjectMeta.Name).
+		Str("id", node.Spec.ProviderID).
 		Msgf("Annotation not found, adding %s to %s", annotationYCKPreemptibleKillerState, state.ExpiryDatetime)
 
 	err = kubernetesClient.SetNodeAnnotation(ctx, node.ObjectMeta.Name, annotationYCKPreemptibleKillerState, state.ExpiryDatetime)
@@ -246,6 +267,7 @@ func getDesiredNodeState(now time.Time, ctx context.Context, kubernetesClient Ku
 		log.Warn().
 			Err(err).
 			Str("host", node.ObjectMeta.Name).
+			Str("id", node.Spec.ProviderID).
 			Msg("Error updating node metadata")
 
 		nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
@@ -275,6 +297,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 		log.Error().
 			Err(err).
 			Str("host", node.ObjectMeta.Name).
+			Str("id", node.Spec.ProviderID).
 			Msgf("Error parsing expiry datetime with value '%s'", state.ExpiryDatetime)
 		return
 	}
@@ -285,6 +308,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 	if timeDiff < 0 {
 		log.Info().
 			Str("host", node.ObjectMeta.Name).
+			Str("id", node.Spec.ProviderID).
 			Msgf("Node expired %.0f minute(s) ago, deleting...", timeDiff)
 
 		// set node unschedulable
@@ -297,14 +321,6 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 			return
 		}
 
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("host", node.ObjectMeta.Name).
-				Msg("Error getting project id and zone from node")
-			return
-		}
-
 		var ycloud YcloudClient
 		ycloud, err = NewYcloudClient()
 
@@ -312,6 +328,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 			log.Error().
 				Err(err).
 				Str("host", node.ObjectMeta.Name).
+				Str("id", node.Spec.ProviderID).
 				Msg("Error creating Ycloud client")
 			return
 		}
@@ -323,6 +340,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 			log.Error().
 				Err(err).
 				Str("host", node.ObjectMeta.Name).
+				Str("id", node.Spec.ProviderID).
 				Msg("Error draining kubernetes node")
 			return
 		}
@@ -334,6 +352,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 			log.Error().
 				Err(err).
 				Str("host", node.ObjectMeta.Name).
+				Str("id", node.Spec.ProviderID).
 				Msg("Error draining kube-dns from kubernetes node")
 			return
 		}
@@ -345,17 +364,25 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 			log.Error().
 				Err(err).
 				Str("host", node.ObjectMeta.Name).
+				Str("id", node.Spec.ProviderID).
 				Msg("Error deleting node")
 			return
 		}
 
-		// delete Yandex Cloud instance
-		err = ycloud.DeleteNode(node.ObjectMeta.Name)
+		providerId := node.Spec.ProviderID
+		if strings.HasPrefix(providerId, yandexPrefix) {
+			nodeId := strings.TrimPrefix(providerId, yandexPrefix)
+
+			err = ycloud.DeleteNode(nodeId)
+		} else {
+			err = errors.New("expected to have yandex:// providerId")
+		}
 
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("host", node.ObjectMeta.Name).
+				Str("host", providerId).
+				Str("id", node.Spec.ProviderID).
 				Msg("Error deleting YCloud instance")
 			return
 		}
@@ -364,6 +391,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 
 		log.Info().
 			Str("host", node.ObjectMeta.Name).
+			Str("id", node.Spec.ProviderID).
 			Msg("Node deleted")
 
 		return
@@ -373,6 +401,7 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 
 	log.Info().
 		Str("host", node.ObjectMeta.Name).
+		Str("id", node.Spec.ProviderID).
 		Msgf("%.0f minute(s) to go before kill, keeping node", timeDiff)
 
 	return
