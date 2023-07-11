@@ -8,6 +8,17 @@ spec:
     spec:
       serviceAccountName: yc-preemptible-killer
       terminationGracePeriodSeconds: 300
+      # Prefer not to schedule on preemptible nodes
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: yandex.cloud/preemptible
+                operator: NotIn
+                values:
+                - "true"
       containers:
       - name: yc-preemptible-killer
         image: europe-west4-docker.pkg.dev/youthink/docker/yc-preemptible-killer:latest

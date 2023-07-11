@@ -34,6 +34,16 @@ spec:
         {{- toYaml . | nindent 8 }}
     {{- end }}
       serviceAccountName: {{ template "yc-preemptible-killer.serviceAccountName" . }}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: yandex.cloud/preemptible
+                operator: NotIn
+                values:
+                - "true"
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
