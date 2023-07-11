@@ -123,7 +123,7 @@ func main() {
 	ctx := foundation.InitCancellationContext(context.Background())
 
 	// init /liveness endpoint
-	// foundation.InitLiveness()
+	foundation.InitLiveness()
 
 	// configure prometheus metrics endpoint
 	foundation.InitMetrics()
