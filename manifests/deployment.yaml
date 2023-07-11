@@ -21,10 +21,10 @@ spec:
                 - "true"
       containers:
       - name: yc-preemptible-killer
-        image: europe-west4-docker.pkg.dev/youthink/docker/yc-preemptible-killer:latest
+        image: europe-west4-docker.pkg.dev/youthink/docker/yc-preemptible-killer:b3aaa683e129b16fc7780f27979c3ad38b642b02
         ports:
         - name: prom-metrics
-          containerPort: 9001
+          containerPort: 9101
         env:
         - name: DRAIN_TIMEOUT
           value: "300"
